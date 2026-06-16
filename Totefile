@@ -1,0 +1,38 @@
+USE https://github.com/NextStepTeam/tote-pm
+NAME Tote packet manager
+# VS github_releases  made soon
+DESCRIPTION "Пакетный менеджер для всего"
+
+DEPS apt:python3,apt:python3-pip
+
+[INSTALL]
+    #GIT CHECKOUT {version}
+    CLONE ../../install.py install.py
+    RUN python3 install.py
+[/INSTALL]
+
+[UNINSTALL]
+    RUN python3 uninstall.py
+[/UNINSTALL]
+
+[UPDATE]
+    GIT PULL
+    #GIT CHECKOUT {version}
+    RUN python3 update.py
+[/UPDATE]
+
+# [UP]
+#     # запуск Docker-контейнеров
+#     DOCKER COMPOSE UP -d
+# [/UP]
+
+# [DOWN]
+#     DOCKER COMPOSE DOWN
+# [/DOWN]
+
+[CUSTOM.TEST]
+    RUN echo "Running tests..."
+    RUN echo "string"
+    RUN sleep 10
+    RUN echo "done"
+[/CUSTOM.TEST]

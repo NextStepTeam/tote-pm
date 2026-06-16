@@ -160,7 +160,6 @@ def build_binary():
         "--onefile",
         "--name", CONFIG["app_name"],
         "--add-data", f"{script_dir}/utils:utils",
-        "--add-data", f"{script_dir}/conf:conf",
         "--clean",
         "--noconfirm",
         str(main_py)

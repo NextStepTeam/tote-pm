@@ -4,7 +4,7 @@ from .parser import ToteRecipe
 import shutil
 from pathlib import Path
 
-def execute_section(recipe: ToteRecipe, section_name: str, variables: dict = None):
+def execute_section(recipe: ToteRecipe, section_name: str, variables: dict = None, context: dict = {}):
     """Выполнить все команды из указанной секции"""
     if section_name not in recipe.sections:
         print(f"Секция [{section_name}] не найдена")
@@ -13,6 +13,8 @@ def execute_section(recipe: ToteRecipe, section_name: str, variables: dict = Non
     commands = recipe.sections[section_name]
     
     for cmd_line in commands:
+        for key, value in context.items():
+            cmd_line = cmd_line.replace(f"%{key}%", str(value))
         # разбираем команду
         parts = shlex.split(cmd_line)
         if not parts:

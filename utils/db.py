@@ -111,6 +111,14 @@ class Package(Base):
         """Установить значение в JSON метаданные"""
         self.package_metadata[key] = value
 
+class Instance(Base):
+    __tablename__ = 'instances'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    package = Column(String(255), nullable=False, unique=False)
+    iid = Column(String(50), nullable=False, unique=True)
+    dir = Column(String(255), nullable=False, unique=False)
+    context = Column(JSONColumn, nullable=False, default={})
 
 # Класс для управления базой данных
 class Database:

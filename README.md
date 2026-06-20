@@ -183,3 +183,96 @@ python3 main.py -c path/to/config.json <action>
 ---
 
 Если вы хотите развивать Tote дальше, начните с `utils/parser.py` и `utils/execute.py`, чтобы расширить формат Totefile и поведение установки пакетов.
+
+## Управление инстансами (Instances)
+
+Tote поддерживает создание и управление инстансами приложений, описанных в `Totefile` пакета. Инстансы хранятся в кеше в директории `cache/instances/{id}`.
+
+- Создать инстанс:
+
+```bash
+python3 main.py instance add <package> <id> -p <port> -c '{"KEY":"value"}'
+```
+
+- Запустить/поднять инстанс:
+
+```bash
+python3 main.py instance start <id>
+```
+
+- Остановить инстанс:
+
+```bash
+python3 main.py instance stop <id>
+```
+
+- Обновить инстанс (выполнить секцию update):
+
+```bash
+python3 main.py instance update <id>
+```
+
+- Удалить инстанс:
+
+```bash
+python3 main.py instance remove <id>
+```
+
+- Применить настройки к инстансу:
+
+```bash
+python3 main.py instance settings <id> -c 'ENV=prod,DEBUG=false'
+```
+
+Контекст (`-c`) поддерживает JSON или простые пары `key=value` через запятую. Порт можно явно указать через `-p`, иначе будет подобран свободный порт автоматически.
+
+## Формат Totefile: секции INSTANCES
+
+Чтобы Tote мог управлять инстансами пакета, в `Totefile` можно добавить секции `INSTANCES.*`. Пример:
+
+```
+[INSTANCES.CREATE]
+RUN echo "Running instance create..."
+[/INSTANCES.CREATE]
+
+[INSTANCES.UP]
+RUN echo "Running instance up..."
+[/INSTANCES.UP]
+
+[INSTANCES.STOP]
+RUN echo "Running instance stop..."
+[/INSTANCES.STOP]
+
+[INSTANCES.UPDATE]
+RUN echo "Running instance update..."
+[/INSTANCES.UPDATE]
+
+[INSTANCES.REMOVE]
+RUN echo "Running instance remove..."
+[/INSTANCES.REMOVE]
+
+[INSTANCES.SETTINGS]
+RUN echo "Running instance settings..."
+[/INSTANCES.SETTINGS]
+```
+
+Секции выполняются командой `RUN` и получают контекстные переменные (например, `%port%` заменяется на номер порта). В `utils/execute.py` поддерживается подстановка контекста через синтаксис `%key%`.
+
+## Отладка и тестирование
+
+- Для быстрой проверки синтаксиса используйте:
+
+```bash
+python3 -m py_compile main.py
+```
+
+- Запуск конкретных секций `Totefile` можно тестировать локально, например, клонируя пакет в `cache/` и вызывая `execute_section` из тестового скрипта.
+
+## Разработка
+
+- Основные точки входа для расширения:
+	- `utils/parser.py` — парсер Totefile (расширение синтаксиса секций и переменных)
+	- `utils/execute.py` — выполнение команд (добавление новых директив, логирования)
+	- `utils/db.py` — модели БД (добавление полей метаданных для инстансов)
+
+Если хотите, могу добавить unit-тесты для парсера или небольшой пример пакета в `cache/ToteExample`.

@@ -165,6 +165,8 @@ parser.add_argument('-d', '--debug', required=False, action='store_true',
                    help="Включить режим отладки")
 parser.add_argument('-c', '--config', required=False,
                    help="Путь к файлу конфигурации")
+parser.add_argument('-v', '--verbose', required=False, action='store_true',
+                   help="Подробный вывод (дополнительная информация)")
 
 subparsers = parser.add_subparsers(dest='action', required=True)
 
@@ -237,6 +239,9 @@ instances_config_subparsers.add_argument('id', help='Идентификатор 
 
 # Clear cache
 cc_parser = subparsers.add_parser('clear_cache', help="Очистить кэш")
+
+# Diagnostics
+diag_parser = subparsers.add_parser('diagnostics', help="Показать системную и отладочную информацию")
 
 args = parser.parse_args()
 #endregion
@@ -426,6 +431,67 @@ try:
                     s.delete(repo)
                     s.commit()
                     print("✅ Репозиторий удалён")
+
+    elif args.action == 'diagnostics':
+        # Печать общей системной информации
+        print("** Diagnostics **")
+        print(f"Рабочая директория: {os.getcwd()}")
+        try:
+            import getpass, platform
+            print(f"Пользователь: {getpass.getuser()}")
+            print(f"Платформа: {platform.system()} {platform.release()} ({platform.machine()})")
+            print(f"Python: {platform.python_version()}")
+        except Exception:
+            pass
+
+        print(f"Debug флаг: {args.debug}")
+        print(f"Конфиг (CONF): {json.dumps(CONF, ensure_ascii=False)}")
+        print(f"DB URL: {CONF.get('db')}")
+
+        # Кэш и папки
+        cache_dir = get_cache_dir()
+        print(f"Cache dir: {cache_dir}")
+        if os.path.exists(cache_dir):
+            try:
+                entries = os.listdir(cache_dir)
+                print(f"Содержимое cache/: {entries}")
+                if args.verbose:
+                    for root, dirs, files in os.walk(cache_dir):
+                        print(f"-- {root} --")
+                        for d in dirs:
+                            print(f"DIR: {os.path.join(root, d)}")
+                        for f in files:
+                            p = os.path.join(root, f)
+                            try:
+                                size = os.path.getsize(p)
+                            except Exception:
+                                size = 'n/a'
+                            print(f"FILE: {p} ({size} bytes)")
+            except Exception as e:
+                print(f"Ошибка при перечислении cache/: {e}")
+        else:
+            print("Cache не найден")
+
+        # БД: репозитории, пакеты, установленные, инстансы
+        try:
+            with DB.get_session() as s:
+                print("Repos:")
+                for repo in s.query(Repo).all():
+                    print(f" - {repo.repo_metadata.get('name','Unnamed')} ({repo.rid}) -> {repo.url}")
+
+                print("Packages (registered):")
+                for pkg in s.query(Package).all():
+                    print(f" - {pkg.pid}: {pkg.package_metadata.get('name')}")
+
+                print("Installed packages:")
+                for ip in s.query(InstalledPackage).all():
+                    print(f" - {ip.package} -> {ip.package_metadata}")
+
+                print("Instances:")
+                for ins in s.query(Instance).all():
+                    print(f" - {ins.iid}: package={ins.package}, dir={ins.dir}, context={ins.context}")
+        except Exception as e:
+            print(f"Ошибка при запросе БД: {e}")
 
     elif args.action == "install":
         # Если установка из файла

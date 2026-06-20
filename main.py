@@ -16,13 +16,20 @@ from utils.db import *
 # ========== Конфигурация ==========
 def get_config():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        base_dir = os.path.dirname(sys.executable)
-        config_path = os.path.join(base_dir, 'config.json')
+        home_dir = os.path.expanduser('~')
+        config_dir = os.path.join(home_dir, '.config', 'tote')
+        cache_dir = os.path.join(home_dir, '.cache', 'tote')
+        os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        config_path = os.path.join(config_dir, 'config.json')
+        db_path = os.path.join(config_dir, 'packages.db')
+        
         default_config = {
-            "db": "sqlite:///packages.db",
+            "db": f"sqlite:///{db_path}",
             "dirs": {
-                "cache": "cache",
-                "config": "config"
+                "cache": cache_dir,
+                "config": config_dir
             }
         }
         if os.path.exists(config_path):

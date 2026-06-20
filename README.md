@@ -74,6 +74,12 @@ python3 main.py info <path/to/Totefile> -f
 
 #### Управление репозиториями
 
+По умолчанию добавлен репозиторий:
+
+```bash
+https://raw.githubusercontent.com/NextStepTeam/tote-repo/refs/heads/main
+```
+
 Добавить репозиторий:
 
 ```bash
@@ -90,6 +96,12 @@ python3 main.py repo list
 
 ```bash
 python3 main.py repo info <id>
+```
+
+Обновить репозиторий:
+
+```bash
+python3 main.py repo update <id>
 ```
 
 Удалить репозиторий:
@@ -116,6 +128,12 @@ python3 main.py install <path/to/Totefile> -f
 
 ```bash
 python3 main.py update <package>
+```
+
+Обновить все установленные пакеты:
+
+```bash
+python3 main.py update
 ```
 
 #### Удаление пакета

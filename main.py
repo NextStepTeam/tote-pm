@@ -38,6 +38,59 @@ def get_config():
 
 CONF = get_config()
 DB = Database(CONF.get("db"))
+DEFAULT_REPO_URL = "https://raw.githubusercontent.com/NextStepTeam/tote-repo/refs/heads/main"
+
+# ========== Утилиты для репозиториев ==========
+def normalize_repo_url(url: str) -> str:
+    return url.rstrip('/')
+
+
+def get_metadata_url(url: str) -> str:
+    url = normalize_repo_url(url)
+    return url if url.endswith('/metadata.json') else f"{url}/metadata.json"
+
+
+def fetch_repo_metadata(url: str) -> dict:
+    metadata_url = get_metadata_url(url)
+    result = requests.get(metadata_url, timeout=10)
+    result.raise_for_status()
+    return result.json()
+
+
+def ensure_default_repo():
+    with DB.get_session() as s:
+        existing = s.query(Repo).filter(Repo.url == DEFAULT_REPO_URL).first()
+        if existing:
+            return
+
+        try:
+            data = fetch_repo_metadata(DEFAULT_REPO_URL)
+            repo = Repo(url=DEFAULT_REPO_URL, rid=data.get("id"), repo_metadata={"name": data.get("name")})
+            s.add(repo)
+
+            for pkg_id, package in data.get("packages", {}).items():
+                tote = parse_totefile(requests.get(package.get("url")).text)
+                s.add(Package(
+                    repo=repo,
+                    pid=pkg_id,
+                    package_metadata={
+                        "url": package.get("url"),
+                        "name": package.get("name"),
+                        "totefile": {
+                            "use": tote.use,
+                            "name": tote.name,
+                            "description": tote.description,
+                            "deps": tote.deps
+                        }
+                    }
+                ))
+            s.commit()
+            print(f"ℹ️ Стандартный репозиторий добавлен: {DEFAULT_REPO_URL}")
+        except Exception as e:
+            print(f"⚠️ Не удалось добавить стандартный репозиторий: {e}")
+
+
+ensure_default_repo()
 
 # ========== Аргументы командной строки ==========
 parser = argparse.ArgumentParser(
@@ -69,6 +122,9 @@ repo_list_parser = repo_subparsers.add_parser('list')
 repo_info_parser = repo_subparsers.add_parser('info')
 repo_info_parser.add_argument('id')
 
+repo_update_parser = repo_subparsers.add_parser('update', help="Обновить репозиторий")
+repo_update_parser.add_argument('id')
+
 repo_remove_parser = repo_subparsers.add_parser('remove')
 repo_remove_parser.add_argument('id')
 
@@ -87,8 +143,8 @@ remove_parser.add_argument('-f', '--file', required=False, action='store_true')
 remove_parser.add_argument('-i', '--id', required=False)
 
 # Update
-update_parser = subparsers.add_parser('update', help="Обновить пакет")
-update_parser.add_argument('package')
+update_parser = subparsers.add_parser('update', help="Обновить пакет или все установленные пакеты")
+update_parser.add_argument('package', nargs='?', help="Имя пакета или путь к Totefile")
 update_parser.add_argument('-f', '--file', required=False, action='store_true')
 update_parser.add_argument('-i', '--id', required=False)
 
@@ -205,6 +261,49 @@ try:
                 print(f"📦 {repo.repo_metadata.get('name', 'Unnamed')}")
                 for pkg in repo.packages:
                     print(f"  - {pkg.package_metadata.get('name', pkg.pid)} ({pkg.pid})")
+
+        elif args.repo_action == "update":
+            with DB.get_session() as s:
+                repo = s.query(Repo).filter(Repo.rid == args.id).first()
+                if not repo:
+                    repo = s.query(Repo).filter(Repo.url == args.id).first()
+                if not repo:
+                    print(f"❌ Репозиторий '{args.id}' не найден")
+                    sys.exit(1)
+
+                try:
+                    data = fetch_repo_metadata(repo.url)
+                except Exception as e:
+                    print(f"❌ Ошибка загрузки метаданных репозитория: {e}")
+                    sys.exit(1)
+
+                repo.repo_metadata = {"name": data.get("name")}
+                if data.get("id"):
+                    repo.rid = data.get("id")
+
+                existing_packages = list(repo.packages)
+                for pkg in existing_packages:
+                    s.delete(pkg)
+
+                for pkg_id, package in data.get("packages", {}).items():
+                    print(f"  ➕ {package.get('name')}")
+                    tote = parse_totefile(requests.get(package.get("url")).text)
+                    s.add(Package(
+                        repo=repo,
+                        pid=pkg_id,
+                        package_metadata={
+                            "url": package.get("url"),
+                            "name": package.get("name"),
+                            "totefile": {
+                                "use": tote.use,
+                                "name": tote.name,
+                                "description": tote.description,
+                                "deps": tote.deps
+                            }
+                        }
+                    ))
+                s.commit()
+                print(f"✅ Репозиторий '{repo.repo_metadata.get('name', repo.rid)}' обновлён")
 
         elif args.repo_action == "remove":
             with DB.get_session() as s:
@@ -345,28 +444,56 @@ try:
                     os.chdir(original_dir)
 
     elif args.action == "update":
-        with DB.get_session() as s:
-            installed = s.query(InstalledPackage).filter(InstalledPackage.package == args.package).first()
-            if not installed:
-                print(f"❌ Пакет '{args.package}' не установлен")
-                sys.exit(1)
+        if not args.package:
+            print("📦 Обновление всех установленных пакетов")
+            with DB.get_session() as s:
+                installed_list = s.query(InstalledPackage).all()
+                if not installed_list:
+                    print("ℹ️ Нет установленных пакетов для обновления")
+                    sys.exit(0)
 
-            cache_dir = installed.package_metadata.get("cache_dir")
-            if not cache_dir or not os.path.exists(cache_dir):
-                print(f"❌ Кэш для '{args.package}' не найден")
-                sys.exit(1)
+                for installed in installed_list:
+                    package_name = installed.package
+                    cache_dir = installed.package_metadata.get("cache_dir")
+                    if not cache_dir or not os.path.exists(cache_dir):
+                        print(f"⚠️ Пропуск '{package_name}': кэш не найден")
+                        continue
 
-            if args.id != "tote":
-                os.chdir(cache_dir)
-            try:
-                with open('Totefile', 'r', encoding='utf-8') as f:
-                    recipe = parse_totefile(f.read())
-                    execute_section(recipe, "update")
-                print(f"✅ Пакет '{args.package}' обновлён")
-            except Exception as e:
-                print(f"❌ Ошибка обновления: {e}")
-            finally:
-                os.chdir(original_dir)
+                    print(f"🔄 Обновление пакета: {package_name}")
+                    if args.id != "tote":
+                        os.chdir(cache_dir)
+                    try:
+                        with open('Totefile', 'r', encoding='utf-8') as f:
+                            recipe = parse_totefile(f.read())
+                            execute_section(recipe, "update")
+                        print(f"✅ Пакет '{package_name}' обновлён")
+                    except Exception as e:
+                        print(f"❌ Ошибка обновления '{package_name}': {e}")
+                    finally:
+                        os.chdir(original_dir)
+        else:
+            with DB.get_session() as s:
+                installed = s.query(InstalledPackage).filter(InstalledPackage.package == args.package).first()
+                if not installed:
+                    print(f"❌ Пакет '{args.package}' не установлен")
+                    sys.exit(1)
+
+                cache_dir = installed.package_metadata.get("cache_dir")
+                if not cache_dir or not os.path.exists(cache_dir):
+                    print(f"❌ Кэш для '{args.package}' не найден")
+                    sys.exit(1)
+
+                if args.id != "tote":
+                    os.chdir(cache_dir)
+                try:
+                    with open('Totefile', 'r', encoding='utf-8') as f:
+                        recipe = parse_totefile(f.read())
+                        execute_section(recipe, "update")
+                    print(f"✅ Пакет '{args.package}' обновлён")
+                except Exception as e:
+                    print(f"❌ Ошибка обновления: {e}")
+                finally:
+                    os.chdir(original_dir)
 
     elif args.action == "remove":
         with DB.get_session() as s:
